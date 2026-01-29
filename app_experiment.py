@@ -16,7 +16,7 @@ MODEL_NAME = "Panda0116/emotion-classification-model"
 
 st.set_page_config(page_title="Eksperyment Muzyczny", layout="centered")
 
-# Mapowanie wyników modelu na nazwy emocji
+# Mapowanie wynikow modelu na nazwy emocji
 MODEL_OUTPUT_MAPPING = {
     "LABEL_0": "Sadness",
     "LABEL_1": "Happiness",
@@ -25,7 +25,7 @@ MODEL_OUTPUT_MAPPING = {
     "LABEL_4": "Fear"
 }
 
-# --- 2. ŁADOWANIE ZASOBÓW (CACHE) ---
+# --- 2. LADOWANIE ZASOBOW (CACHE) ---
 @st.cache_resource
 def load_resources():
     print("\n[SYSTEM] Ladowanie zasobow...")
@@ -185,7 +185,7 @@ def get_random_track(df):
 
 # --- 5. INTERFEJS UŻYTKOWNIKA ---
 
-# GOTOWE SCENARIUSZE (Tylko pełne teksty, bez pustych opcji)
+# GOTOWE SCENARIUSZE
 PRESET_SCENARIOS = {
     "GNIEW (The Boscombe Valley Mystery)": 
     "His face was livid with fury, his eyes blazing, and his whole frame trembling with passion. 'You villain!' he screamed, clenching his fists until the knuckles were white. 'I will not listen to another word! You have betrayed me, you have ruined everything!' He raised his cane as if to strike, his voice choking with an overwhelming, uncontrollable rage that seemed to consume him entirely.",
@@ -217,28 +217,42 @@ def main():
         st.progress(min(count / 10, 1.0))
         
         st.markdown("---")
-        st.info("Instrukcja:\n1. Kliknij START.\n2. Przeczytaj wylosowany tekst.\n3. Ocen muzyke.\n4. Pobierz wyniki po min. 5 testach.")
+        st.write("**Instrukcja:**")
+        st.write("1. Kliknij START.")
+        st.write("2. Ocen muzyke.")
+        st.write("3. Powtorz min. 5 razy.")
+        st.write("4. Przeslij wyniki.")
         
         if count > 0:
+            st.subheader("Opcja 1: Komputer")
             df_res = pd.DataFrame(st.session_state.session_results)
             csv_data = df_res.to_csv(index=False).encode('utf-8')
             timestamp = datetime.now().strftime("%d-%m_%H-%M")
             
             st.download_button(
-                label="POBIERZ WYNIKI (CSV)",
+                label="POBIERZ PLIK CSV",
                 data=csv_data,
                 file_name=f"wyniki_{timestamp}.csv",
-                mime='text/csv',
-                type="primary"
+                mime='text/csv'
             )
+            
+            st.markdown("---")
+            st.subheader("Opcja 2: Telefon")
+            st.info("Na telefonie latwiej skopiowac tekst niz pobrac plik.")
+            st.write("Kliknij ikonke **kopiowania** w prawym gornym rogu ponizszego pola, a potem wklej mi to na Messengerze:")
+            
+            # Generowanie tekstu CSV do skopiowania
+            csv_text = df_res.to_csv(index=False)
+            st.code(csv_text, language='csv')
+            
         else:
-            st.warning("Brak wynikow do pobrania.")
+            st.warning("Zrob test, aby zobaczyc wyniki.")
 
     # --- GLOWNE OKNO ---
     st.title("Sherlock Holmes: AI Music Experiment")
     st.markdown("""
-    **Ślepy test do pracy dyplomowej.**
-    Algorytm AI vs Losowość.
+    **Slepy test do pracy dyplomowej.**
+    Algorytm AI vs Losowosc.
     """)
     st.markdown("---")
 
@@ -254,7 +268,7 @@ def main():
         st.subheader("1. Rozpocznij test")
         st.info("Kliknij przycisk ponizej. System wylosuje fragment ksiazki i dobierze do niego muzyke.")
 
-        if st.button("🎲 Wylosuj Tekst i Muzykę (START)", type="primary", use_container_width=True):
+        if st.button("Wylosuj Tekst i Muzyke (START)", type="primary", use_container_width=True):
             # 1. Losowanie tekstu
             scenario_name, scenario_text = random.choice(list(PRESET_SCENARIOS.items()))
             st.session_state.user_text = scenario_text
@@ -263,7 +277,7 @@ def main():
             # 2. Losowanie metody (Blind Test 50/50)
             if random.random() < 0.5:
                 st.session_state.rec_method = 'ALGO'
-                with st.spinner("AI analizuje emocje w tekście..."):
+                with st.spinner("AI analizuje emocje w tekscie..."):
                     time.sleep(0.5)
                     st.session_state.track = process_text_smart(
                         scenario_text, nlp_classifier, fuzzy_system, spotify_df
@@ -298,7 +312,7 @@ def main():
             if st.form_submit_button("Zatwierdz Ocene", type="primary"):
                 res = {
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'scenario': st.session_state.scenario_name, # Dodalem nazwe scenariusza do CSV
+                    'scenario': st.session_state.scenario_name,
                     'user_text': st.session_state.user_text,
                     'method': st.session_state.rec_method,
                     'rating': rating,
@@ -318,7 +332,7 @@ def main():
     elif st.session_state.phase == 'REVEAL':
         st.subheader("3. Wynik")
         if st.session_state.rec_method == 'ALGO':
-            st.success("To byl ALGORYTM SI")
+            st.success("To byl TWOJ ALGORYTM")
         else:
             st.warning("To byl LOSOWY UTWOR")
             
