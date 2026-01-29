@@ -318,7 +318,7 @@ def main():
     elif st.session_state.phase == 'REVEAL':
         st.subheader("3. Wynik")
         if st.session_state.rec_method == 'ALGO':
-            st.success("To byl TWOJ ALGORYTM")
+            st.success("To byl ALGORYTM SI")
         else:
             st.warning("To byl LOSOWY UTWOR")
             
