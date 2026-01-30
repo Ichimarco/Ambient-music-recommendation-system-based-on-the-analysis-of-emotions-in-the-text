@@ -217,42 +217,47 @@ def main():
         st.progress(min(count / 10, 1.0))
         
         st.markdown("---")
-        st.write("**Instrukcja:**")
-        st.write("1. Kliknij START.")
-        st.write("2. Ocen muzyke.")
-        st.write("3. Powtorz min. 5 razy.")
-        st.write("4. Przeslij wyniki.")
+        st.markdown("###Instrukcja dla testera:")
+        st.info("""
+        1. Kliknij **START**.
+        2. **Najpierw włącz muzykę** (Play na Spotify).
+        3. Czytaj tekst słuchając muzyki.
+        4. Oceń, czy utwór buduje odpowiedni nastrój.
+        5. Wykonaj min. **5 prób**.
+        6. Pobierz/Skopiuj wyniki.
+        """)
         
         if count > 0:
+            st.markdown("---")
             st.subheader("Opcja 1: Komputer")
             df_res = pd.DataFrame(st.session_state.session_results)
             csv_data = df_res.to_csv(index=False).encode('utf-8')
             timestamp = datetime.now().strftime("%d-%m_%H-%M")
             
             st.download_button(
-                label="POBIERZ PLIK CSV",
+                label="📥 POBIERZ WYNIKI (CSV)",
                 data=csv_data,
                 file_name=f"wyniki_{timestamp}.csv",
-                mime='text/csv'
+                mime='text/csv',
+                type="primary"
             )
             
             st.markdown("---")
             st.subheader("Opcja 2: Telefon")
-            st.info("Na telefonie latwiej skopiowac tekst niz pobrac plik.")
-            st.write("Kliknij ikonke **kopiowania** w prawym gornym rogu ponizszego pola, a potem wklej mi to na Messengerze:")
+            st.caption("Kliknij ikonkę kopiowania w rogu i wyślij mi to na Messengerze:")
             
             # Generowanie tekstu CSV do skopiowania
             csv_text = df_res.to_csv(index=False)
             st.code(csv_text, language='csv')
             
         else:
-            st.warning("Zrob test, aby zobaczyc wyniki.")
+            st.warning("Zrob test, aby zobaczyc opcje pobierania.")
 
     # --- GLOWNE OKNO ---
-    st.title("Sherlock Holmes: AI Music Experiment")
+    st.title("🕵️ Sherlock Holmes: AI Music Experiment")
     st.markdown("""
-    **Slepy test do pracy dyplomowej.**
-    Algorytm AI vs Losowosc.
+    **Ślepy test do pracy dyplomowej.**
+    Celem jest sprawdzenie, czy AI potrafi dobrać muzykę do odpowiednich emocji w tekście, która sprawi, że czytanie będzie przyjemniejsze i bardziej immersyjne.
     """)
     st.markdown("---")
 
@@ -266,9 +271,9 @@ def main():
     # FAZA 1: WEJSCIE
     if st.session_state.phase == 'INPUT':
         st.subheader("1. Rozpocznij test")
-        st.info("Kliknij przycisk ponizej. System wylosuje fragment ksiazki i dobierze do niego muzyke.")
+        st.info("Kliknij przycisk poniżej. System wylosuje scenę z książki i dobierze tło muzyczne.")
 
-        if st.button("Wylosuj Tekst i Muzyke (START)", type="primary", use_container_width=True):
+        if st.button("Wylosuj Tekst i Muzykę (START)", type="primary", use_container_width=True):
             # 1. Losowanie tekstu
             scenario_name, scenario_text = random.choice(list(PRESET_SCENARIOS.items()))
             st.session_state.user_text = scenario_text
@@ -277,14 +282,14 @@ def main():
             # 2. Losowanie metody (Blind Test 50/50)
             if random.random() < 0.5:
                 st.session_state.rec_method = 'ALGO'
-                with st.spinner("AI analizuje emocje w tekscie..."):
+                with st.spinner("AI analizuje emocje w tekście..."):
                     time.sleep(0.5)
                     st.session_state.track = process_text_smart(
                         scenario_text, nlp_classifier, fuzzy_system, spotify_df
                     )
             else:
                 st.session_state.rec_method = 'RANDOM'
-                with st.spinner("Losowanie utworu z bazy..."):
+                with st.spinner("Szukanie utworu w bazie..."):
                     time.sleep(0.5)
                     st.session_state.track = get_random_track(spotify_df)
             
@@ -293,23 +298,31 @@ def main():
 
     # FAZA 2: OCENA
     elif st.session_state.phase == 'RATING':
-        st.subheader("2. Odsłuch")
-        st.write(f"**Wylosowana scena:** {st.session_state.scenario_name}")
-        st.info("Czy muzyka pasuje do ponizszego tekstu?")
-        
-        # Wyswietlenie tekstu
-        st.markdown(f"_{st.session_state.user_text}_")
+        st.subheader("2. Odsłuch i Czytanie")
         
         # Player
         track = st.session_state.track
+        st.markdown("###Krok 1: Włącz muzykę")
         embed_url = f"https://open.spotify.com/embed/track/{track['track_id']}?utm_source=generator"
         st.components.v1.iframe(embed_url, height=152)
         
+        st.markdown("###Krok 2: Przeczytaj tekst")
+        st.caption(f"Scena: {st.session_state.scenario_name}")
+        
+        # Ładniejsza prezentacja tekstu (jako cytat)
+        st.markdown(f"""
+        > *"{st.session_state.user_text}"*
+        """)
+        
+        st.markdown("---")
+        st.markdown("###Krok 3: Oceń wrażenia")
+        st.write("Czy ta muzyka pasuje do emocji w tekście? Czy pomaga się wczuć?")
+        
         with st.form("rating"):
-            rating = st.slider("Ocena trafnosci (1 - Tragicznie, 10 - Idealnie)", 1, 10, 5)
-            comment = st.text_input("Komentarz (opcjonalny)")
+            rating = st.slider("Ocena dopasowania", 1, 10, 5, help="1 = Zupełnie nie pasuje, 10 = Idealny klimat")
+            comment = st.text_input("Twój komentarz (opcjonalny)")
             
-            if st.form_submit_button("Zatwierdz Ocene", type="primary"):
+            if st.form_submit_button("Zatwierdź Ocenę", type="primary"):
                 res = {
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'scenario': st.session_state.scenario_name,
@@ -331,22 +344,23 @@ def main():
     # FAZA 3: WYNIK
     elif st.session_state.phase == 'REVEAL':
         st.subheader("3. Wynik")
+        
         if st.session_state.rec_method == 'ALGO':
-            st.success("To byl TWOJ ALGORYTM")
+            st.success("To był **ALGORYTM AI**")
         else:
-            st.warning("To byl LOSOWY UTWOR")
+            st.warning("To był **LOSOWY UTWÓR**")
             
-        st.write(f"Utwor: **{st.session_state.track['track_name']}** - {st.session_state.track['artists']}")
+        st.write(f"Utwór: **{st.session_state.track['track_name']}** - {st.session_state.track['artists']}")
         st.caption(f"Gatunek: {st.session_state.track['track_genre']}")
         
         col1, col2 = st.columns(2)
         with col1:
-             if st.button("Kolejny Test (LOSUJ)", type="primary", use_container_width=True):
+             if st.button("Kolejny Test", type="primary", use_container_width=True):
                 st.session_state.phase = 'INPUT'
                 st.session_state.user_text = ""
                 st.rerun()
         with col2:
-            st.write("Nie zapomnij pobrac wynikow po zakonczeniu sesji!")
+            st.info("⬆ Pamiętaj o pobraniu wyników po zakończeniu!")
 
 if __name__ == "__main__":
     main()
