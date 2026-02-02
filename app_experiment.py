@@ -254,7 +254,7 @@ def main():
             st.warning("Zrob test, aby zobaczyc opcje pobierania.")
 
     # --- GLOWNE OKNO ---
-    st.title("🕵️ Sherlock Holmes: AI Music Experiment")
+    st.title("AI Music Experiment")
     st.markdown("""
     **Ślepy test do pracy dyplomowej.**
     Celem jest sprawdzenie, czy AI potrafi dobrać muzykę do odpowiednich emocji w tekście, która sprawi, że czytanie będzie przyjemniejsze i bardziej immersyjne.
@@ -360,7 +360,7 @@ def main():
                 st.session_state.user_text = ""
                 st.rerun()
         with col2:
-            st.info("⬆ Pamiętaj o pobraniu wyników po zakończeniu!")
+            st.info("Pamiętaj o pobraniu wyników po zakończeniu!")
 
 if __name__ == "__main__":
     main()
