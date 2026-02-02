@@ -235,7 +235,7 @@ def main():
             timestamp = datetime.now().strftime("%d-%m_%H-%M")
             
             st.download_button(
-                label="📥 POBIERZ WYNIKI (CSV)",
+                label="POBIERZ WYNIKI (CSV)",
                 data=csv_data,
                 file_name=f"wyniki_{timestamp}.csv",
                 mime='text/csv',
