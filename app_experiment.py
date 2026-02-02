@@ -282,14 +282,14 @@ def main():
             # 2. Losowanie metody (Blind Test 50/50)
             if random.random() < 0.5:
                 st.session_state.rec_method = 'ALGO'
-                with st.spinner("AI analizuje emocje w tekście..."):
+                with st.spinner("Ładowanie.."):
                     time.sleep(0.5)
                     st.session_state.track = process_text_smart(
                         scenario_text, nlp_classifier, fuzzy_system, spotify_df
                     )
             else:
                 st.session_state.rec_method = 'RANDOM'
-                with st.spinner("Szukanie utworu w bazie..."):
+                with st.spinner("Ładowanie.."):
                     time.sleep(0.5)
                     st.session_state.track = get_random_track(spotify_df)
             
@@ -307,7 +307,7 @@ def main():
         st.components.v1.iframe(embed_url, height=152)
         
         st.markdown("###Krok 2: Przeczytaj tekst")
-        st.caption(f"Scena: {st.session_state.scenario_name}")
+
         
         # Ładniejsza prezentacja tekstu (jako cytat)
         st.markdown(f"""
