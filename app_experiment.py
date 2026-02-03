@@ -28,17 +28,19 @@ MODEL_OUTPUT_MAPPING = {
 # --- 2. LADOWANIE ZASOBOW (CACHE) ---
 @st.cache_resource
 def load_resources():
-    print("\n[SYSTEM] Ladowanie zasobow...")
+    print("\n[SYSTEM] Inicjalizacja... Ladowanie modelu i danych...")
     # A. Dataset
     try:
         df = pd.read_csv(DATASET_PATH)
         df.columns = [col.lower() for col in df.columns] 
+        print(f"[SYSTEM] Dataset zaladowany: {len(df)} utworow.")
     except FileNotFoundError:
         st.error(f"Brak pliku {DATASET_PATH}.")
         st.stop()
 
     # B. NLP
     classifier = pipeline("text-classification", model=MODEL_NAME, top_k=None)
+    print("[SYSTEM] Model NLP zaladowany.")
 
     # C. Fuzzy Logic
     emotion_cat = ctrl.Antecedent(np.arange(0, 5, 1), 'emotion_category')
@@ -70,7 +72,7 @@ def load_resources():
     emotion_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule_low])
     fuzzy_sim = ctrl.ControlSystemSimulation(emotion_ctrl)
     
-    print("[SYSTEM] Gotowe!\n")
+    print("[SYSTEM] Logika rozmyta gotowa. Aplikacja startuje!\n")
     return df, classifier, fuzzy_sim
 
 try:
@@ -80,20 +82,19 @@ except Exception as e:
     st.stop()
 
 
-# --- 3. LOGIKA PRZETWARZANIA (Z LOGAMI) ---
+# --- 3. LOGIKA PRZETWARZANIA ---
 def process_text_smart(text, classifier, fuzzy_sim, df):
     print("\n" + "="*50)
-    print(f"[ALGO START] Tekst: \"{text[:50]}...\"")
+    print(f"[ALGO START] Analiza tekstu: \"{text[:40]}...\"")
     
     # 1. NLP
     preds = classifier(text)
     sorted_preds = sorted(preds[0], key=lambda x: x['score'], reverse=True)
     top_pred = sorted_preds[0]
-    
     emotion_name = MODEL_OUTPUT_MAPPING.get(top_pred['label'], "Unknown")
     confidence_score = top_pred['score']
-
-    print(f"[NLP] Emocja: {emotion_name.upper()} (Pewnosc: {confidence_score:.4f})")
+    
+    print(f"[NLP] Wykryta emocja: {emotion_name.upper()} (Pewnosc: {confidence_score:.4f})")
 
     # 2. Fuzzy Logic
     emotion_map_idx = {"Sadness": 0, "Happiness": 1, "Anger": 2, "Fear": 3, "Tenderness": 4}
@@ -106,51 +107,63 @@ def process_text_smart(text, classifier, fuzzy_sim, df):
         fuzzy_sim.compute()
         val_fuzzy = fuzzy_sim.output['valence']
         aro_fuzzy = fuzzy_sim.output['arousal']
-        print(f"[FUZZY] Wyliczono (1-9): Valence={val_fuzzy:.2f}, Arousal={aro_fuzzy:.2f}")
+        print(f"[FUZZY] Wynik (1-10): Valence={val_fuzzy:.2f}, Arousal={aro_fuzzy:.2f}")
     except:
         val_fuzzy, aro_fuzzy = 5.0, 5.0
-        print("[FUZZY] Blad obliczen, fallback 5.0")
+        print("[FUZZY] Blad obliczen, uzywam wartosci domyslnych 5.0")
 
-    # 3. Norm
+    # 3. Norm & Override (Safety Net)
     target_valence = max(0.0, min(1.0, (val_fuzzy - 1) / 8.0))
     target_energy = max(0.0, min(1.0, (aro_fuzzy - 1) / 8.0))
-    print(f"[NORM] Cel Spotify (0-1): Valence={target_valence:.2f}, Energy={target_energy:.2f}")
+
+    override = False
+    if emotion_name == "Tenderness":
+        target_valence, target_energy = 0.7, 0.2
+        override = True
+    elif emotion_name == "Fear":
+        target_valence, target_energy = 0.2, 0.7
+        override = True
+    elif emotion_name == "Anger":
+        target_valence, target_energy = 0.1, 0.9
+        override = True
+    elif emotion_name == "Happiness" and target_energy < 0.5:
+        target_valence, target_energy = 0.9, 0.8
+        override = True
+    elif emotion_name == "Sadness" and target_energy > 0.4:
+        target_valence, target_energy = 0.1, 0.2
+        override = True
+    
+    if override:
+        print(f"[RULES] Zastosowano Safety Net dla emocji {emotion_name}.")
+
+    print(f"[TARGET] Cel Spotify: Valence={target_valence:.2f}, Energy={target_energy:.2f}")
 
     # 4. Filter
     genres_to_search = []
     filtered_df = df.copy()
     
-    print("[RULES] Dobieranie gatunku...")
-    if target_energy >= 0.55:
+    if emotion_name == "Tenderness":
+        genres_to_search = ['piano', 'ambient', 'new-age', 'romantic', 'guitar', 'chill']
+        if 'mode' in filtered_df.columns: filtered_df = filtered_df[filtered_df['mode'] == 1]
+    elif target_energy >= 0.55:
         if target_valence < 0.45: 
-            print(" -> High Energy + Negative (Gniew/Strach)")
             genres_to_search = ['industrial', 'dark-ambient', 'breakbeat', 'gabber', 'hard-techno', 'techno', 'minimal-techno', 'metal']
-            if 'mode' in filtered_df.columns:
-                print(" -> Filtr: MINOR KEY (Mrok)")
-                filtered_df = filtered_df[filtered_df['mode'] == 0]
+            if 'mode' in filtered_df.columns: filtered_df = filtered_df[filtered_df['mode'] == 0]
         else: 
-            print(" -> High Energy + Positive (Radosc)")
             genres_to_search = ['house', 'trance', 'happy-hardcore', 'dance', 'edm', 'chicago-house']
-            if 'mode' in filtered_df.columns:
-                print(" -> Filtr: MAJOR KEY (Jasnosc)")
-                filtered_df = filtered_df[filtered_df['mode'] == 1]
+            if 'mode' in filtered_df.columns: filtered_df = filtered_df[filtered_df['mode'] == 1]
     else:
         if target_valence >= 0.50: 
-            print(" -> Low Energy + Positive (Relaks)")
             genres_to_search = ['ambient', 'piano', 'new-age', 'jazz']
-            if 'mode' in filtered_df.columns:
-                print(" -> Filtr: MAJOR KEY (Anty-Burzum)")
-                filtered_df = filtered_df[filtered_df['mode'] == 1]
+            if 'mode' in filtered_df.columns: filtered_df = filtered_df[filtered_df['mode'] == 1]
         else: 
-            print(" -> Low Energy + Negative (Smutek)")
             genres_to_search = ['ambient', 'classical']
-            print(" -> Filtr: Brak")
+
+    print(f"[FILTER] Szukam wsrod gatunkow: {genres_to_search}")
 
     pattern = '|'.join(genres_to_search)
     candidates = filtered_df[filtered_df['track_genre'].str.contains(pattern, case=False, na=False)].copy()
-    
-    if 'instrumentalness' in candidates.columns:
-        candidates = candidates[candidates['instrumentalness'] > 0.5]
+    if 'instrumentalness' in candidates.columns: candidates = candidates[candidates['instrumentalness'] > 0.5]
 
     tolerance = 0.1
     result = pd.DataFrame()
@@ -161,15 +174,13 @@ def process_text_smart(text, classifier, fuzzy_sim, df):
         ]
         tolerance += 0.05
     
+    final = None
     if result.empty:
-        print("[FALLBACK] Brak idealnego dopasowania, biore losowy z gatunku.")
-        if not candidates.empty:
-            final = candidates.sample(1).iloc[0]
-        else:
-            final = df.sample(1).iloc[0]
+        print("[FALLBACK] Nie znaleziono idealnego utworu, biore losowy z pasujacych gatunkow.")
+        final = candidates.sample(1).iloc[0] if not candidates.empty else df.sample(1).iloc[0]
     else:
         final = result.sample(1).iloc[0]
-
+        
     print(f"[WYNIK] Wybrano: {final['track_name']} - {final['artists']}")
     print("="*50 + "\n")
     return final
@@ -185,82 +196,63 @@ def get_random_track(df):
 
 # --- 5. INTERFEJS UŻYTKOWNIKA ---
 
-# GOTOWE SCENARIUSZE
+
 PRESET_SCENARIOS = {
-    "GNIEW (The Boscombe Valley Mystery)": 
-    "His face was livid with fury, his eyes blazing, and his whole frame trembling with passion. 'You villain!' he screamed, clenching his fists until the knuckles were white. 'I will not listen to another word! You have betrayed me, you have ruined everything!' He raised his cane as if to strike, his voice choking with an overwhelming, uncontrollable rage that seemed to consume him entirely.",
+    "SCENARIUSZ 1 (Dracula)": 
+    # EMOCJA: GNIEW (Hrabia Dracula wpada w furię)
+    "I was conscious of the presence of the Count, and of his being as if lapped in a storm of fury. I saw his strong hand grasp the slender neck of the fair woman and with giant’s power draw it back, the blue eyes transformed with fury, the white teeth champing with rage, and the fair cheeks blazing red with passion. But the Count! Never did I imagine such wrath and fury; his eyes were positively blazing, as if the flames of hell-fire blazed behind them. His face was deathly pale, and the lines of it were hard like drawn wires; the thick eyebrows that met over the nose now seemed like a heaving bar of white-hot metal. With a fierce sweep of his arm, he hurled the woman from him, and then motioned to the others, as though he were beating them back; it was the same imperious gesture that I had seen used to the wolves. In a voice which seemed to cut through the air and then ring round the room he screamed: ‘How dare you touch him, any of you? How dare you cast eyes on him when I had forbidden it? Back, I tell you all! This man belongs to me! Beware how you meddle with him, or you’ll have to deal with me! My wrath shall know no bounds if you defy me!’",   
     
-    "STRACH (The Speckled Band)": 
-    "'It is fear, Mr. Holmes. It is terror.' She raised her veil as she spoke, and we could see that she was indeed in a pitiable state of agitation, her face all drawn and grey, with restless, frightened eyes, like those of some hunted animal. Her features and figure were those of a woman of thirty, but her hair was shot with premature grey, and her expression was weary and haggard. She shuddered as she sat, and I could see the sweat beads upon her forehead.",
+    "SCENARIUSZ 2 (The Speckled Band)": 
+    # EMOCJA: STRACH (Helen Stoner szuka pomocy)
+    "It is fear, Mr. Holmes. It is terror.” She raised her veil as she spoke, and we could see that she was indeed in a pitiable state of agitation, her face all drawn and grey, with restless frightened eyes, like those of some hunted animal. Her hair was shot with premature grey, and her expression was weary and haggard. The lady gave a violent start and stared in bewilderment, crying out: “Sir, I can stand this strain no longer; I shall go mad if it continues. I have no one to turn to—none, save only one, who cares for me, and he can be of little aid. Oh, sir, do you not think that you could help me, and at least throw a little light through the dense darkness which surrounds me? The very horror of my situation lies in the fact that my fears are so vague, and my suspicions depend so entirely upon small points, which might seem trivial to another. I am a victim of a terror that never sleeps, a dread that follows me even into my dreams. My nerves are worked up to the highest pitch of tension, and I feel as though some invisible hand is closing round my throat in the silence of the night. You may advise me how to walk amid the dangers which encompass me.",
     
-    "SMUTEK (The Beryl Coronet)": 
-    "'I am a ruined man, Mr. Holmes—a ruined man! My honour is gone, my good name is lost, and I have to face my family with the knowledge that I have brought them to shame. I kept the treasure in my own hands, and it is gone. God help me! God help me!' He threw up his hands in an agony of despair and pressed his fingers into his hair, swaying backwards and forwards in his chair.",
+    "SCENARIUSZ 3 (The Beryl Coronet)": 
+    # EMOCJA: SMUTEK (Złamany bankier)
+    "He was a man of about fifty, tall, portly, and imposing, but his face was ash-coloured and his breath came in short gasps. I looked at him, and then at my companion, and knew at once that our visitor was a man whose spirit had been completely broken. 'I am a ruined man, Mr. Holmes—a ruined man!' he cried, wringing his hands in an agony of despair. 'My honour is gone, my good name is lost, and I have to face my family with the knowledge that I have brought them to shame. God help me! God help me!' He put his hands to his face and rocked himself to and fro, tears streaming down his cheeks, the picture of a man whom some sudden and terrible misfortune has overwhelmed. Every heavy sigh that escaped him seemed to mark the death of his former self, leaving only a hollow shell of grief, from which there could be no recovery. The world has grown dark and empty, and I feel as though I am sinking into a deep, cold abyss of sorrow where no light can reach me. My heart is heavy as lead, and I can only weep for what is lost and can never be regained.",
     
-    "RADOSC (A Study in Scarlet / Success)": 
-    "A flush of triumph appeared upon his pale cheeks, and his eyes shone with the pure joy of the solution. 'We have done it, Watson!' he cried, clapping his hands together with a boyish laugh of delight. 'The case is clear! The mystery is solved! It is a masterpiece!' His face radiated happiness and excitement, the heavy burden of the investigation lifting to reveal a spirit light and jubilant.",
+    "SCENARIUSZ 4 (A Little Princess)": 
+    # EMOCJA: CZUŁOŚĆ (Sara i Becky)
+    "Suddenly—and it was all through the loving mournfulness of Becky's streaming eyes—Sara held out her hand and gave a little sob. 'Oh, Becky,' she said. 'I told you we were just the same—only two little girls—just two little girls. You see how true it is. There's no difference now.' Becky ran to her and caught her hand, and hugged it to her breast, kneeling beside her and sobbing with love and pain. 'Yes, miss, you are,' she cried, and her words were all broken. 'Whats'ever 'appens to you—whats'ever—you'd be a princess all the same—an' nothin' couldn't make you nothin' different.' Sara felt a deep, quiet devotion to her little friend, and her heart was full of a strange, gentle tenderness as she stroked Becky's hair with a soft touch. They sat together in the silence of the attic, two small souls finding peace in each other’s company. It was a moment of such pure intimacy that the cold room seemed to grow warm with the light of a faithful, loving heart.",
     
-    "CZULOSC (The Man with the Twisted Lip)": 
-    "The woman rushed forward and threw her arms round the man's neck. 'Oh, Neville!' she cried, 'I knew that you were safe! I knew that you were safe!' She held him close with a devotion that spoke more than words, while he pressed his cheek against hers, stroking her hair with a gentle, trembling hand. In that moment of reunion, the grim surroundings of the opium den seemed to fade away."
+    "SCENARIUSZ 5 (A Little Princess)": 
+    # EMOCJA: RADOŚĆ / TRIUMF (Magia na poddaszu)
+    "Her eyes opened in spite of herself, and then she actually smiled—for what she saw she had never seen in the attic before. She put her feet on the floor with a rapturous smile. 'I am dreaming it stays—real! I'm dreaming it FEELS real!' Her face was a shining, wonderful thing. 'It's true! It's true!' she cried. 'I've touched them all. They are as real as we are. The Magic has come and done it, Becky!' Sara stood in the warm, glowing midst of things, her heart leaping with a joy she had never known. It was a moment of unalloyed happiness and triumph, as if the world had suddenly turned into fairyland. 'I am NOT dreaming!' she cried aloud, laughing with sheer delight at the wonderful magic that had happened. Her eyes sparkled with a jubilant light, and she began to dance around the room, clapping her hands in a state of high spirits. It was a little triumph to make the dream complete, a brilliant discovery that cleared up the darkness of her life and filled her soul with an unexpected, life-giving energy."
 }
 
 def main():
     # --- PASEK BOCZNY ---
     with st.sidebar:
-        st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/768px-Spotify_logo_without_text.svg.png", width=50)
         st.title("Panel Badawczy")
         
         if 'session_results' not in st.session_state:
             st.session_state.session_results = []
+        if 'umux_results' not in st.session_state:
+            st.session_state.umux_results = {}
             
         count = len(st.session_state.session_results)
         st.metric("Liczba testow", count)
-        st.progress(min(count / 10, 1.0))
+        st.progress(min(count / 5, 1.0))
         
         st.markdown("---")
-        st.markdown("###Instrukcja dla testera:")
+        st.markdown("### Instrukcja:")
         st.info("""
-        1. Kliknij **START**.
-        2. **Najpierw włącz muzykę** (Play na Spotify).
-        3. Czytaj tekst słuchając muzyki.
-        4. Oceń, czy utwór buduje odpowiedni nastrój.
-        5. Wykonaj min. **5 prób**.
-        6. Pobierz/Skopiuj wyniki.
+        1. Kliknij START.
+        2. Najpierw wlacz muzyke.
+        3. Czytaj tekst sluchajac.
+        4. Ocen nastroj.
+        5. Wykonaj min. 5 prob.
+        6. Wypelnij ankiete koncowa (UMUX-Lite).
         """)
         
-        if count > 0:
-            st.markdown("---")
-            st.subheader("Opcja 1: Komputer")
-            df_res = pd.DataFrame(st.session_state.session_results)
-            csv_data = df_res.to_csv(index=False).encode('utf-8')
-            timestamp = datetime.now().strftime("%d-%m_%H-%M")
-            
-            st.download_button(
-                label="POBIERZ WYNIKI (CSV)",
-                data=csv_data,
-                file_name=f"wyniki_{timestamp}.csv",
-                mime='text/csv',
-                type="primary"
-            )
-            
-            st.markdown("---")
-            st.subheader("Opcja 2: Telefon")
-            st.caption("Kliknij ikonkę kopiowania w rogu i wyślij mi to na Messengerze:")
-            
-            # Generowanie tekstu CSV do skopiowania
-            csv_text = df_res.to_csv(index=False)
-            st.code(csv_text, language='csv')
-            
-        else:
-            st.warning("Zrob test, aby zobaczyc opcje pobierania.")
+        if count >= 5 and st.session_state.phase != 'UMUX' and st.session_state.phase != 'DOWNLOAD':
+             if st.button("Zakoncz i ocen system (UMUX-Lite)", type="primary"):
+                 print("[UI] Kliknieto: Zakoncz i ocen (UMUX)")
+                 st.session_state.phase = 'UMUX'
+                 st.rerun()
 
     # --- GLOWNE OKNO ---
-    st.title("AI Music Experiment")
-    st.markdown("""
-    **Ślepy test do pracy dyplomowej.**
-    Celem jest sprawdzenie, czy AI potrafi dobrać muzykę do odpowiednich emocji w tekście, która sprawi, że czytanie będzie przyjemniejsze i bardziej immersyjne.
-    """)
-    st.markdown("---")
-
+    st.title("Sherlock Holmes: AI Music Experiment")
+    
     # Inicjalizacja Stanow
     if 'phase' not in st.session_state: st.session_state.phase = 'INPUT'
     if 'rec_method' not in st.session_state: st.session_state.rec_method = None
@@ -270,26 +262,24 @@ def main():
 
     # FAZA 1: WEJSCIE
     if st.session_state.phase == 'INPUT':
+        st.markdown("Slepy test. Sprawdz, czy muzyka pomaga w immersji.")
+        st.markdown("---")
         st.subheader("1. Rozpocznij test")
-        st.info("Kliknij przycisk poniżej. System wylosuje scenę z książki i dobierze tło muzyczne.")
-
-        if st.button("Wylosuj Tekst i Muzykę (START)", type="primary", use_container_width=True):
-            # 1. Losowanie tekstu
+        
+        if st.button("Wylosuj Tekst i Muzyke (START)", type="primary", use_container_width=True):
+            print("[UI] Kliknieto START - Rozpoczynanie nowego testu")
             scenario_name, scenario_text = random.choice(list(PRESET_SCENARIOS.items()))
             st.session_state.user_text = scenario_text
             st.session_state.scenario_name = scenario_name
+            print(f"[UI] Wylosowano scenariusz: {scenario_name}")
             
-            # 2. Losowanie metody (Blind Test 50/50)
-            if random.random() < 0.5:
-                st.session_state.rec_method = 'ALGO'
-                with st.spinner("Ładowanie.."):
+            with st.spinner("Przygotowywanie testu..."):
+                if random.random() < 0.5:
+                    st.session_state.rec_method = 'ALGO'
                     time.sleep(0.5)
-                    st.session_state.track = process_text_smart(
-                        scenario_text, nlp_classifier, fuzzy_system, spotify_df
-                    )
-            else:
-                st.session_state.rec_method = 'RANDOM'
-                with st.spinner("Ładowanie.."):
+                    st.session_state.track = process_text_smart(scenario_text, nlp_classifier, fuzzy_system, spotify_df)
+                else:
+                    st.session_state.rec_method = 'RANDOM'
                     time.sleep(0.5)
                     st.session_state.track = get_random_track(spotify_df)
             
@@ -298,44 +288,55 @@ def main():
 
     # FAZA 2: OCENA
     elif st.session_state.phase == 'RATING':
-        st.subheader("2. Odsłuch i Czytanie")
+        st.subheader("2. Odsluch i Czytanie")
         
-        # Player
         track = st.session_state.track
-        st.markdown("###Krok 1: Włącz muzykę")
+        st.markdown("### Krok 1: Wlacz muzyke")
+        
         embed_url = f"https://open.spotify.com/embed/track/{track['track_id']}?utm_source=generator"
         st.components.v1.iframe(embed_url, height=152)
-        
-        st.markdown("###Krok 2: Przeczytaj tekst")
 
+        # --- PRZYCISK PONOWNEGO LOSOWANIA ---
+        if st.button("Utwor nie dziala? Wylosuj inny zestaw (Tekst + Muzyka)"):
+            print("[UI] Kliknieto: Utwor nie dziala (RESET)")
+            with st.spinner("Losowanie nowego zestawu..."):
+                scenario_name, scenario_text = random.choice(list(PRESET_SCENARIOS.items()))
+                st.session_state.user_text = scenario_text
+                st.session_state.scenario_name = scenario_name
+                print(f"[UI] Nowy scenariusz po resecie: {scenario_name}")
+                
+                if random.random() < 0.5:
+                    st.session_state.rec_method = 'ALGO'
+                    time.sleep(0.5)
+                    st.session_state.track = process_text_smart(scenario_text, nlp_classifier, fuzzy_system, spotify_df)
+                else:
+                    st.session_state.rec_method = 'RANDOM'
+                    time.sleep(0.5)
+                    st.session_state.track = get_random_track(spotify_df)
+            st.rerun()
+        # ------------------------------------
         
-        # Ładniejsza prezentacja tekstu (jako cytat)
-        st.markdown(f"""
-        > *"{st.session_state.user_text}"*
-        """)
+        st.markdown("### Krok 2: Przeczytaj tekst")
+        st.caption(f"Scena: {st.session_state.scenario_name}")
+        st.markdown(f"> *\"{st.session_state.user_text}\"*")
         
         st.markdown("---")
-        st.markdown("###Krok 3: Oceń wrażenia")
-        st.write("Czy ta muzyka pasuje do emocji w tekście? Czy pomaga się wczuć?")
+        st.markdown("### Krok 3: Ocen wrazenia")
+        st.write("Czy ta muzyka pasuje do emocji w tekscie?")
         
         with st.form("rating"):
-            rating = st.slider("Ocena dopasowania", 1, 10, 5, help="1 = Zupełnie nie pasuje, 10 = Idealny klimat")
-            comment = st.text_input("Twój komentarz (opcjonalny)")
+            rating = st.slider("Ocena dopasowania", 1, 10, 5, help="1 = Nie pasuje, 10 = Idealna")
             
-            if st.form_submit_button("Zatwierdź Ocenę", type="primary"):
+            if st.form_submit_button("Zatwierdz Ocene", type="primary"):
+                print(f"[UI] Zatwierdzono ocene: {rating}/10 dla metody {st.session_state.rec_method}")
                 res = {
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'scenario': st.session_state.scenario_name,
                     'user_text': st.session_state.user_text,
-                    'method': st.session_state.rec_method,
+                    'method': st.session_state.rec_method, 
                     'rating': rating,
-                    'comment': comment,
                     'track_name': track['track_name'],
-                    'artist': track['artists'],
-                    'genre': track['track_genre'],
-                    'valence': track['valence'],
-                    'energy': track['energy'],
-                    'mode': track.get('mode', 'N/A')
+                    'artist': track['artists']
                 }
                 st.session_state.session_results.append(res)
                 st.session_state.phase = 'REVEAL'
@@ -343,24 +344,72 @@ def main():
 
     # FAZA 3: WYNIK
     elif st.session_state.phase == 'REVEAL':
-        st.subheader("3. Wynik")
+        st.subheader("3. Zapisano!")
         
-        if st.session_state.rec_method == 'ALGO':
-            st.success("To był **ALGORYTM AI**")
-        else:
-            st.warning("To był **LOSOWY UTWÓR**")
-            
-        st.write(f"Utwór: **{st.session_state.track['track_name']}** - {st.session_state.track['artists']}")
-        st.caption(f"Gatunek: {st.session_state.track['track_genre']}")
+        st.write(f"Odsluchany utwor: **{st.session_state.track['track_name']}** - {st.session_state.track['artists']}")
         
         col1, col2 = st.columns(2)
         with col1:
              if st.button("Kolejny Test", type="primary", use_container_width=True):
+                print("[UI] Kliknieto: Kolejny Test")
                 st.session_state.phase = 'INPUT'
                 st.session_state.user_text = ""
                 st.rerun()
         with col2:
-            st.info("Pamiętaj o pobraniu wyników po zakończeniu!")
+            if len(st.session_state.session_results) >= 5:
+                st.success("Mozesz teraz przejsc do ankiety UMUX-Lite.")
+            else:
+                remaining = 5 - len(st.session_state.session_results)
+                st.caption(f"Zrob jeszcze {remaining} testy, aby zakonczyc.")
+
+    # FAZA 4: UMUX
+    elif st.session_state.phase == 'UMUX':
+        st.subheader("Ankieta UMUX-Lite")
+        st.write("Ocen system w skali 1-7 (1 = Zdecydowanie nie zgadzam sie, 7 = Zdecydowanie zgadzam sie).")
+        
+        with st.form("umux_form"):
+            u1 = st.slider("1. Mozliwosci tego systemu spelniaja moje wymagania.", 1, 7, 4)
+            u2 = st.slider("2. Ten system jest latwy w uzyciu.", 1, 7, 4)
+            
+            if st.form_submit_button("Zapisz i Pobierz Wyniki", type="primary"):
+                print(f"[UI] Zapisano UMUX: U1={u1}, U2={u2}")
+                st.session_state.umux_results = {
+                    'umux_1_capabilities': u1,
+                    'umux_2_ease': u2
+                }
+                st.session_state.phase = 'DOWNLOAD'
+                st.rerun()
+
+    # FAZA 5: DOWNLOAD
+    elif st.session_state.phase == 'DOWNLOAD':
+        st.subheader("Dziekuje za udzial!")
+        st.success("Badanie zakonczone.")
+        
+        final_data = []
+        umux = st.session_state.umux_results
+        
+        for row in st.session_state.session_results:
+            full_row = {**row, **umux} 
+            final_data.append(full_row)
+            
+        df_final = pd.DataFrame(final_data)
+        
+        csv_data = df_final.to_csv(index=False).encode('utf-8')
+        timestamp = datetime.now().strftime("%d-%m_%H-%M")
+        
+        print("[UI] Generowanie pliku CSV do pobrania.")
+        st.download_button(
+            label="POBIERZ PELNE WYNIKI (CSV)",
+            data=csv_data,
+            file_name=f"badanie_full_{timestamp}.csv",
+            mime='text/csv',
+            type="primary",
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+        st.markdown("#### Opcja na telefon (Kopiuj-Wklej):")
+        st.code(df_final.to_csv(index=False), language='csv')
 
 if __name__ == "__main__":
     main()
