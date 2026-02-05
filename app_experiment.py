@@ -274,6 +274,7 @@ def main():
         **Co musisz zrobić?**
         System wylosuje dla Ciebie krótki fragment powieści oraz utwór muzyczny.
         Twoim zadaniem jest przeczytać tekst podczas słuchania i ocenić, czy muzyka pasuje do klimatu.
+        (Opcja pobrania wyników na telefonie jest w lewej górnej strzałce)
         """)
         # --------------------------------------------------------------------
 
