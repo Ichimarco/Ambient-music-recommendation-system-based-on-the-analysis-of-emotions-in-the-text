@@ -112,29 +112,9 @@ def process_text_smart(text, classifier, fuzzy_sim, df):
         val_fuzzy, aro_fuzzy = 5.0, 5.0
         print("[FUZZY] Blad obliczen, uzywam wartosci domyslnych 5.0")
 
-    # 3. Norm & Override (Safety Net)
+    # 3. Norm 
     target_valence = max(0.0, min(1.0, (val_fuzzy - 1) / 8.0))
     target_energy = max(0.0, min(1.0, (aro_fuzzy - 1) / 8.0))
-
-    override = False
-    if emotion_name == "Tenderness":
-        target_valence, target_energy = 0.7, 0.2
-        override = True
-    elif emotion_name == "Fear":
-        target_valence, target_energy = 0.2, 0.7
-        override = True
-    elif emotion_name == "Anger":
-        target_valence, target_energy = 0.1, 0.9
-        override = True
-    elif emotion_name == "Happiness" and target_energy < 0.5:
-        target_valence, target_energy = 0.9, 0.8
-        override = True
-    elif emotion_name == "Sadness" and target_energy > 0.4:
-        target_valence, target_energy = 0.1, 0.2
-        override = True
-    
-    if override:
-        print(f"[RULES] Zastosowano Safety Net dla emocji {emotion_name}.")
 
     print(f"[TARGET] Cel Spotify: Valence={target_valence:.2f}, Energy={target_energy:.2f}")
 
